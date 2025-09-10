@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulateur de Largage</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background-color: #2e2e4a;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+            width: 100%;
+            max-width: 900px;
+        }
+        .game-map {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 aspect ratio */
+            /* J'ai mis à jour l'URL de l'image avec un nouveau lien */
+            background-image: url('https://upload.wikimedia.org/wikipedia/commons/f/f9/Fortnite_Chapter_4_Season_4_map.jpg');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: crosshair;
+        }
+        .marker {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background-color: #f7b000;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            transform: translate(-50%, -50%);
+            transition: all 0.2s ease-in-out;
+        }
+        .marker.start {
+            background-color: #00ff80;
+        }
+        .path {
+            position: absolute;
+            height: 2px;
+            background-color: #ff007f;
+            transform-origin: 0 0;
+        }
+        .info-box {
+            background-color: #3b3b5c;
+            border: 2px solid #5a5a7b;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .message-box {
+            background-color: #1f1f3a;
+            border: 1px solid #4a4a6b;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 16px;
+            text-align: center;
+            font-weight: 600;
+        }
+        .btn-primary {
+            background-color: #6a6ad4;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background-color 0.3s ease;
+        }
+        .btn-primary:hover {
+            background-color: #5555c4;
+        }
+        .pulse-animation {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans">
+    <div class="container mx-auto p-6 bg-gray-800 rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold mb-4 text-center">Simulateur de Largage</h1>
+        <p class="text-center text-gray-400 mb-6">Cliquez sur la carte pour définir le point de départ du bus et le point d'atterrissage.</p>
+
+        <div class="game-map rounded-lg relative" id="gameMap">
+            <!-- Les marqueurs et le chemin seront ajoutés ici par JavaScript -->
+        </div>
+
+        <div class="info-box mt-6">
+            <h2 class="text-xl font-semibold mb-2">Informations sur le Largage</h2>
+            <p id="startInfo" class="text-sm">Point de départ du bus: non défini</p>
+            <p id="endInfo" class="text-sm">Point d'atterrissage: non défini</p>
+            <p id="resultInfo" class="mt-4 text-sm font-bold text-green-400 hidden">
+                Temps de saut optimal: <span id="jumpTime">0</span> secondes.
+            </p>
+        </div>
+
+        <div id="messageBox" class="message-box mt-4 hidden"></div>
+
+        <div class="flex justify-center mt-6">
+            <button id="calculateBtn" class="btn-primary rounded-full px-6 py-3" disabled>Calculer l'itinéraire</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const gameMap = document.getElementById('gameMap');
+            const startInfo = document.getElementById('startInfo');
+            const endInfo = document.getElementById('endInfo');
+            const resultInfo = document.getElementById('resultInfo');
+            const jumpTimeSpan = document.getElementById('jumpTime');
+            const messageBox = document.getElementById('messageBox');
+            const calculateBtn = document.getElementById('calculateBtn');
+
+            let startPoint = null;
+            let endPoint = null;
+
+            // Fonction pour afficher un message
+            function showMessage(message, type = 'info') {
+                messageBox.textContent = message;
+                messageBox.className = `message-box mt-4 ${type === 'error' ? 'bg-red-900 border-red-700' : 'bg-green-900 border-green-700'} text-white`;
+                messageBox.classList.remove('hidden');
+            }
+
+            // Fonction pour créer un marqueur
+            function createMarker(x, y, type) {
+                const marker = document.createElement('div');
+                marker.className = `marker ${type === 'start' ? 'start' : ''}`;
+                marker.style.left = `${x}px`;
+                marker.style.top = `${y}px`;
+                return marker;
+            }
+
+            // Fonction pour dessiner la ligne
+            function drawPath() {
+                // Supprime le chemin précédent
+                const oldPath = document.querySelector('.path');
+                if (oldPath) {
+                    oldPath.remove();
+                }
+
+                if (startPoint && endPoint) {
+                    const dx = endPoint.x - startPoint.x;
+                    const dy = endPoint.y - startPoint.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+                    const path = document.createElement('div');
+                    path.className = 'path absolute';
+                    path.style.left = `${startPoint.x}px`;
+                    path.style.top = `${startPoint.y}px`;
+                    path.style.width = `${distance}px`;
+                    path.style.transform = `rotate(${angle}deg)`;
+                    gameMap.appendChild(path);
+                }
+            }
+
+            // Gestionnaire de clic sur la carte
+            gameMap.addEventListener('click', (e) => {
+                const rect = gameMap.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                if (!startPoint) {
+                    startPoint = { x, y };
+                    const marker = createMarker(x, y, 'start');
+                    gameMap.appendChild(marker);
+                    startInfo.textContent = `Point de départ du bus: (${Math.round(x)}, ${Math.round(y)})`;
+                    showMessage('Point de départ défini. Cliquez maintenant pour définir le point d\'atterrissage.');
+                    calculateBtn.disabled = true;
+                } else if (!endPoint) {
+                    endPoint = { x, y };
+                    const marker = createMarker(x, y, 'end');
+                    gameMap.appendChild(marker);
+                    endInfo.textContent = `Point d'atterrissage: (${Math.round(x)}, ${Math.round(y)})`;
+                    showMessage('Point d\'atterrissage défini. Appuyez sur le bouton pour calculer.');
+                    calculateBtn.disabled = false;
+                } else {
+                    // Réinitialiser si les deux points sont déjà définis
+                    resetState();
+                    startPoint = { x, y };
+                    const marker = createMarker(x, y, 'start');
+                    gameMap.appendChild(marker);
+                    startInfo.textContent = `Point de départ du bus: (${Math.round(x)}, ${Math.round(y)})`;
+                    endInfo.textContent = `Point d'atterrissage: non défini`;
+                    showMessage('Point de départ réinitialisé. Définissez le point d\'atterrissage.');
+                    calculateBtn.disabled = true;
+                }
+
+                if (startPoint && endPoint) {
+                    drawPath();
+                }
+            });
+
+            // Fonction de réinitialisation de l'état
+            function resetState() {
+                startPoint = null;
+                endPoint = null;
+                // Supprimer tous les marqueurs et chemins
+                const markers = document.querySelectorAll('.marker, .path');
+                markers.forEach(m => m.remove());
+                startInfo.textContent = 'Point de départ du bus: non défini';
+                endInfo.textContent = 'Point d\'atterrissage: non défini';
+                resultInfo.classList.add('hidden');
+                messageBox.classList.add('hidden');
+                calculateBtn.disabled = true;
+            }
+
+            // Gestionnaire de clic sur le bouton de calcul
+            calculateBtn.addEventListener('click', () => {
+                if (startPoint && endPoint) {
+                    const dx = endPoint.x - startPoint.x;
+                    const dy = endPoint.y - startPoint.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const time = distance / 50; // Logique de calcul simple (50px/seconde)
+
+                    jumpTimeSpan.textContent = time.toFixed(2);
+                    resultInfo.classList.remove('hidden');
+                    showMessage(`L'itinéraire est calculé! Le temps de saut optimal est de ${time.toFixed(2)} secondes.`, 'success');
+                } else {
+                    showMessage('Veuillez d\'abord définir les points de départ et d\'atterrissage.', 'error');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
